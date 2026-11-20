@@ -1,0 +1,11 @@
+.venv-build/
+build/
+dist/
+__pycache__/
+*.pyc
+.DS_Store
+
+workspace/
+
+license_server/data/
+license_server/keys/private_key.pem

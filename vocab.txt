@@ -1,0 +1,10 @@
+# 词库格式：每行 `类别|词`。类别可省略（默认 COMPANY）
+# WHITELIST|词 = 白名单：明确不脱的词，优先级最高
+COMPANY|宏远建设工程有限公司
+COMPANY|华信咨询集团
+COMPANY|中国银行
+WHITELIST|中国银行
+PERSON|张伟
+PERSON|李建国
+ADDRESS|北京市海淀区中关村大街27号
+CODE|青龙湾三期项目
