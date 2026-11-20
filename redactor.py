@@ -16,13 +16,17 @@
   - delete      严格删除（不可逆）
 
 使用（Web 工作台）：
-    python webapp.py
+
+python webapp.py
 命令行：
     python redactor.py redact 样本标书.docx --vocab vocab.txt
     python redactor.py redact 样本标书.docx --mode realistic --password 口令
     python redactor.py restore 样本标书_脱敏.docx --mapping 样本标书_映射.enc --password 口令 -o 还原.docx
 """
+
 from __future__ import annotations
+
+ENGINE_VERSION = "3.0"
 
 import argparse
 import base64
@@ -1741,7 +1745,16 @@ def _build_report(
     warnings: list[str],
     outputs: dict[str, Path],
     elapsed: float,
+    *,
+    use_smart: bool = True,
 ) -> dict:
+    ner_backend = "无"
+    if use_smart:
+        try:
+            import ner_backend  # noqa: PLC0415
+            ner_backend = ner_backend.info().get("active", "onnx")
+        except Exception:
+            ner_backend = "jieba(降级)"
     detail = []
     stats: dict[str, int] = {}
     for item in items:
@@ -1757,7 +1770,10 @@ def _build_report(
             "出现次数": item["count"],
         })
     return {
-        "工具": "标书脱敏工作台 v3",
+        "工具": "标书脱敏工作台",
+        "引擎版本": ENGINE_VERSION,
+        "ner_enabled": bool(use_smart),
+        "ner_backend": ner_backend,
         "时间": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "源文件": src.name,
         "替换方式": MODE_CN.get(mode, mode),
@@ -1899,7 +1915,8 @@ def redact_document(
         "items": [i for i in items if i["reversible"]],
     }
     report = _build_report(src, mode, strategies, items, warnings,
-                           {"redacted": out_file, "mapping": out_dir}, time.time() - t0)
+                           {"redacted": out_file, "mapping": out_dir}, time.time() - t0,
+                           use_smart=use_smart)
     outputs = _write_outputs(out_dir, stem, suffix, payload,
                              report=report, password=password)
     report["输出"] = {"脱敏文档": str(outputs["redacted"]), "映射文件": str(outputs["mapping"])}

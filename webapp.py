@@ -542,6 +542,68 @@ async def delete_export(job_id: str):
 
 
 # ---------------------------------------------------------------------
+# 词库管理（PRD 6.3）
+# ---------------------------------------------------------------------
+VOCAB_FILE = Path(__file__).resolve().parent / "vocab.txt"
+
+
+def _parse_vocab() -> tuple[list[dict], list[str]]:
+    entries, whitelist = [], []
+    if not VOCAB_FILE.exists():
+        return entries, whitelist
+    for line in VOCAB_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "|" in line:
+            cat, word = line.split("|", 1)
+            cat, word = cat.strip(), word.strip()
+            if cat == "WHITELIST":
+                whitelist.append(word)
+            else:
+                entries.append({"类别": cat, "词": word})
+        else:
+            entries.append({"类别": "COMPANY", "词": line})
+    return entries, whitelist
+
+
+def _save_vocab(entries: list[dict], whitelist: list[str]) -> None:
+    lines = []
+    for e in entries:
+        cat = (e.get("类别") or e.get("category") or "COMPANY").strip()
+        word = (e.get("词") or e.get("word") or "").strip()
+        if cat and word:
+            lines.append(f"{cat}|{word}")
+    for w in whitelist:
+        w = (w or "").strip()
+        if w:
+            lines.append(f"WHITELIST|{w}")
+    VOCAB_FILE.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+
+
+@app.get("/api/vocab")
+async def get_vocab():
+    _require_license()
+    entries, whitelist = _parse_vocab()
+    return {"entries": entries, "whitelist": whitelist, "path": str(VOCAB_FILE)}
+
+
+class VocabRequest(BaseModel):
+    entries: list[dict] = Field(default_factory=list)
+    whitelist: list[str] = Field(default_factory=list)
+
+
+@app.post("/api/vocab")
+async def save_vocab(req: VocabRequest):
+    _require_license()
+    try:
+        _save_vocab(req.entries, req.whitelist)
+    except Exception as exc:
+        raise HTTPException(400, f"词库保存失败：{exc}") from exc
+    return {"saved": True, "count": len(req.entries) + len(req.whitelist)}
+
+
+# ---------------------------------------------------------------------
 # 还原
 # ---------------------------------------------------------------------
 @app.post("/api/restore")
@@ -606,15 +668,19 @@ async def download(job_id: str, kind: str):
     if kind == "redacted":
         name = manifest.get("outputs", {}).get("redacted")
         base = job_dir / "output"
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     elif kind == "mapping":
         name = manifest.get("outputs", {}).get("mapping")
         base = job_dir / "output"
+        media_type = "application/octet-stream"
     elif kind == "report":
         name = manifest.get("outputs", {}).get("report")
         base = job_dir / "output"
+        media_type = "application/json; charset=utf-8"
     elif kind == "restored":
         name = manifest.get("restored")
         base = job_dir / "output"
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     else:
         raise HTTPException(404, "文件不存在")
     if not name:
@@ -622,7 +688,13 @@ async def download(job_id: str, kind: str):
     path = (base / name).resolve()
     if job_dir.resolve() not in path.parents or not path.is_file():
         raise HTTPException(404, "文件不存在")
-    return FileResponse(path, filename=path.name)
+    from urllib.parse import quote
+    safe_name = quote(path.name)
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}",
+        "Cache-Control": "no-store, must-revalidate",
+    }
+    return FileResponse(path, media_type=media_type, headers=headers)
 
 
 # ---------------------------------------------------------------------

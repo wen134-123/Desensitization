@@ -42,9 +42,13 @@
     { value: "delete", label: "严格删除（不可还原）" }
   ];
 
-  var PREVIEW_PAGE_SIZE = 30;
   var DOC_EXT = [".docx", ".txt", ".md", ".markdown"];
   var MAX_SIZE = 50 * 1024 * 1024;
+
+  function currentPageSize() {
+    var sel = $("previewPageSize");
+    return sel ? parseInt(sel.value, 10) || 100 : 100;
+  }
 
   function $(id) { return document.getElementById(id); }
   function qsa(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
@@ -104,12 +108,12 @@
     state.step = step;
     qsa(".steps .step-btn").forEach(function (btn, i) {
       btn.classList.toggle("active", i === step - 1);
-      btn.disabled = i !== 0 && !state.jobId;
+      btn.disabled = false;  // 全程可点击
     });
   }
 
   function showStep(step) {
-    if (!state.jobId && step > 1) step = 1;
+    if (!state.jobId && step > 1) step = 1;  // 无数据时只能在 Step 1
     setStep(step);
 
     show($("uploadCard"));
@@ -119,12 +123,6 @@
     if (step !== 1) hide($("uploadCard"));
     if (step !== 2) hide($("reviewCard"));
     if (step !== 3) hide($("previewCard"));
-
-    // Step 2 底部导航固定
-    var step2Nav = $("reviewCard .step-nav");
-    if (step2Nav) step2Nav.classList.toggle("sticky", step === 2);
-    var step3Nav = $("previewCard .step-nav");
-    if (step3Nav) step3Nav.classList.toggle("sticky", step === 3);
 
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -358,10 +356,9 @@
   }
 
   function addManualTerm() {
-    var sel = window.getSelection();
-    var word = sel ? sel.toString().trim() : "";
-    if (!word) { toast("请先在预览区域用鼠标选中要加入词库的原文片段", true); return; }
-    if (word.length > 80) { toast("选中的词太长（上限 80 字符）", true); return; }
+    var word = ($("manualWord") && $("manualWord").value || "").trim();
+    if (!word) { toast("请先在输入框填入要补的词", true); $("manualWord").focus(); return; }
+    if (word.length > 80) { toast("词太长（上限 80 字符）", true); return; }
     var category = $("manualCategory").value;
     var categoryNames = {
       COMPANY: "公司", PERSON: "人名", PHONE: "电话", IDCARD: "身份证",
@@ -436,11 +433,12 @@
   function renderPreview(data) {
     var all = (data && data.blocks) || [];
     var blocks = $("onlyChanged").checked ? all.filter(function (b) { return b.changed; }) : all;
-    var totalPages = Math.max(1, Math.ceil(blocks.length / PREVIEW_PAGE_SIZE));
+    var ps = currentPageSize();
+    var totalPages = Math.max(1, Math.ceil(blocks.length / ps));
     if (state.previewPage >= totalPages) state.previewPage = totalPages - 1;
     if (state.previewPage < 0) state.previewPage = 0;
-    var startIndex = state.previewPage * PREVIEW_PAGE_SIZE;
-    var visible = blocks.slice(startIndex, startIndex + PREVIEW_PAGE_SIZE);
+    var startIndex = state.previewPage * ps;
+    var visible = blocks.slice(startIndex, startIndex + ps);
 
     var body = $("compareBody"); body.innerHTML = "";
     if (!blocks.length) {
@@ -471,7 +469,7 @@
 
     var pager = $("previewPager");
     if (pager) {
-      pager.classList.toggle("hidden", blocks.length <= PREVIEW_PAGE_SIZE);
+      pager.classList.toggle("hidden", blocks.length <= currentPageSize());
       $("previewPageInfo").textContent =
         "第 " + (state.previewPage + 1) + " / " + totalPages +
         " 页，当前显示 " + visible.length + " 个内容块";
@@ -810,28 +808,43 @@
 
   function downloadFile(file) {
     if (!file || !file.url) { toast("导出文件未就绪", true); return; }
-    // pywebview 桌面壳优先
-    if (window.pywebview && window.pywebview.api && typeof window.pywebview.api.save_file === "function") {
-      toast("准备保存文件…");
-      fetch(file.url).then(function (res) {
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        return res.arrayBuffer();
-      }).then(function (buf) {
-        var bytes = new Uint8Array(buf);
-        var binary = "";
-        for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-        var b64 = btoa(binary);
-        return window.pywebview.api.save_file(b64, file.name);
-      }).then(function (savedPath) {
-        if (savedPath) toast("已保存：" + savedPath);
-        else toast("已取消保存", true);
-      }).catch(function (err) {
-        toast("保存失败：" + (err && err.message ? err.message : String(err)), true);
-      });
-      return;
+    var absUrl = file.url.startsWith("http") ? file.url : window.location.origin + file.url;
+    // pywebview 桌面壳：优先让 Python 侧 fetch + 系统保存对话框（最稳）
+    var api = window.pywebview && window.pywebview.api;
+    if (api) {
+      if (typeof api.save_file_from_url === "function") {
+        toast("准备保存…（选择位置）");
+        api.save_file_from_url(absUrl, file.name).then(function (savedPath) {
+          if (savedPath) toast("已保存：" + savedPath);
+          else toast("已取消保存", true);
+        }).catch(function (err) {
+          toast("保存失败：" + (err && err.message ? err.message : String(err)), true);
+        });
+        return;
+      }
+      if (typeof api.save_file === "function") {
+        toast("准备保存…");
+        fetch(absUrl).then(function (res) {
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          return res.arrayBuffer();
+        }).then(function (buf) {
+          var bytes = new Uint8Array(buf);
+          var binary = "";
+          for (var i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+          var b64 = btoa(binary);
+          return api.save_file(b64, file.name);
+        }).then(function (savedPath) {
+          if (savedPath) toast("已保存：" + savedPath);
+          else toast("已取消保存", true);
+        }).catch(function (err) {
+          toast("保存失败：" + (err && err.message ? err.message : String(err)), true);
+        });
+        return;
+      }
     }
+    // 浏览器 fallback
     toast("正在下载：" + file.name);
-    fetch(file.url).then(function (res) {
+    fetch(absUrl).then(function (res) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return res.blob();
     }).then(function (blob) {
@@ -1002,25 +1015,33 @@
     qsa("input[name=mode]").forEach(function (radio) { radio.addEventListener("change", schedulePreview); });
 
     $("rechooseBtn").addEventListener("click", resetWork);
-    $("addManualTermBtn").addEventListener("click", addManualTerm);
+
+    // 预览分页
     $("previewPrevBtn").addEventListener("click", function () {
       if (state.previewPage > 0) { state.previewPage -= 1; if (state.preview) renderPreview(state.preview); }
     });
     $("previewNextBtn").addEventListener("click", function () {
       state.previewPage += 1; if (state.preview) renderPreview(state.preview);
     });
+    $("previewJumpBtn").addEventListener("click", function () {
+      var input = $("previewJump");
+      if (!input || !state.preview) return;
+      var totalPages = Math.max(1, Math.ceil(state.preview.blocks.length / currentPageSize()));
+      var target = parseInt(input.value, 10);
+      if (isNaN(target) || target < 1) target = 1;
+      if (target > totalPages) target = totalPages;
+      state.previewPage = target - 1;
+      input.value = target;
+      renderPreview(state.preview);
+    });
+    $("previewPageSize").addEventListener("change", function () {
+      state.previewPage = 0;
+      if (state.preview) renderPreview(state.preview);
+    });
 
-    // Step 1 → Step 2
-    $("backUploadBtn").addEventListener("click", function () { showStep(1); });
-    $("goPreviewBtn").addEventListener("click", function () { showStep(3); schedulePreview(); });
-
-    // Step 3 → Step 2
-    $("backReviewBtn").addEventListener("click", function () { showStep(2); schedulePreview(); });
-    $("backReviewBtn2").addEventListener("click", function () { showStep(2); schedulePreview(); });
-
-    // Step 切换
+    // Step 切换（顶部步骤条，全程可点击）
     $("stepBtn1").addEventListener("click", function () { showStep(1); });
-    $("stepBtn2").addEventListener("click", function () { showStep(2); schedulePreview(); });
+    $("stepBtn2").addEventListener("click", function () { showStep(2); });
     $("stepBtn3").addEventListener("click", function () { showStep(3); schedulePreview(); });
 
     // 导出按钮

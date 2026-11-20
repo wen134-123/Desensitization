@@ -157,36 +157,7 @@
             <div id="findingsList" class="findings-list"></div>
           </div>
         </div>
-        <div class="review-tools">
-          <div class="manual-term-box">
-            <label class="field">
-              <span>从右侧预览选中原文后补词</span>
-              <div class="manual-term-row">
-                <select id="manualCategory">
-                  <option value="COMPANY">公司/单位</option>
-                  <option value="PERSON">人名</option>
-                  <option value="PHONE">电话</option>
-                  <option value="IDCARD">身份证</option>
-                  <option value="BANK">银行卡/账号</option>
-                  <option value="EMAIL">邮箱</option>
-                  <option value="ADDRESS">地址</option>
-                  <option value="AMOUNT">报价/金额</option>
-                  <option value="CODE">项目代号</option>
-                  <option value="CREDITCODE">信用代码</option>
-                  <option value="WHITELIST">白名单</option>
-                </select>
-                <button id="addManualTermBtn" class="btn ghost">添加选中词</button>
-              </div>
-              <p class="hint">在右侧预览区用鼠标选中任意原文片段，再选择类别后点击"添加选中词"，会自动把它加入识别词库并重新识别。</p>
-            </label>
-          </div>
-        </div>
         <div id="redactError" class="alert error hidden"></div>
-        <div class="step-nav sticky">
-          <button id="backUploadBtn" class="btn ghost">返回上传</button>
-          <div class="nav-hint" id="reviewHint"></div>
-          <button id="goPreviewBtn" class="btn primary">下一步：预览并导出</button>
-        </div>
       </div>
 
       <!-- Step 3: 预览 + 导出 -->
@@ -215,13 +186,21 @@
         <div id="previewPager" class="preview-pager hidden">
           <button id="previewPrevBtn" class="btn ghost small">上一页</button>
           <span id="previewPageInfo" class="hint"></span>
+          <label class="pager-jump">
+            跳至 <input id="previewJump" type="number" min="1" value="1" style="width:48px;text-align:center"> 页
+            <button id="previewJumpBtn" class="btn ghost small">Go</button>
+          </label>
+          <label class="pager-size">
+            每页
+            <select id="previewPageSize">
+              <option value="50">50</option>
+              <option value="100" selected>100</option>
+              <option value="300">300</option>
+              <option value="99999">全部</option>
+            </select>
+            条
+          </label>
           <button id="previewNextBtn" class="btn ghost small">下一页</button>
-        </div>
-
-        <div class="step-nav sticky">
-          <button id="backReviewBtn" class="btn ghost">返回复核</button>
-          <span class="hint">确认效果后点击右上角「导出脱敏文档」完成操作</span>
-          <button id="backReviewBtn2" class="btn ghost hidden">返回复核</button>
         </div>
       </div>
     </section>
